@@ -1,0 +1,263 @@
+
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#14532d">
+<title>تسيير الأداءات</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,sans-serif;background:#f1f5f2;color:#1f2937}
+header{background:#14532d;color:white;padding:22px 16px;text-align:center}
+header h1{margin:0 0 8px;font-size:24px}
+header p{margin:0;font-size:14px}
+main{max-width:650px;margin:auto;padding:16px}
+.card{background:white;border-radius:14px;padding:16px;margin-bottom:16px;box-shadow:0 2px 8px #0000000c}
+h2{font-size:18px;margin:0 0 16px}
+label{display:block;font-size:14px;margin:12px 0 6px}
+input,textarea{width:100%;padding:12px;border:1px solid #d1d5db;border-radius:9px;font-size:16px;background:white}
+button{border:0;border-radius:9px;padding:12px;font-size:15px;font-weight:bold;cursor:pointer}
+.primary{background:#166534;color:white;width:100%;margin-top:16px}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.stat{background:#ecfdf5;padding:14px;border-radius:10px;text-align:center}
+.stat span{display:block;font-size:13px;margin-bottom:8px}
+.stat strong{font-size:20px;color:#166534;overflow-wrap:anywhere}
+.entry{border:1px solid #e5e7eb;border-radius:10px;padding:12px;margin-top:12px}
+.entry h3{margin:0 0 8px;font-size:17px}
+.entry p{margin:6px 0;font-size:14px;overflow-wrap:anywhere}
+.actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.actions button{flex:1}
+.whatsapp{background:#dcfce7;color:#166534}
+.delete{background:#fee2e2;color:#991b1b}
+.secondary{background:#e5e7eb;color:#111827}
+.muted{color:#6b7280;font-size:13px}
+#empty{text-align:center;padding:20px;color:#6b7280}
+footer{text-align:center;padding:18px;color:#6b7280;font-size:12px}
+</style>
+</head>
+<body>
+<header>
+<h1>تسيير الأداءات</h1>
+<p>تسجيل الأداءات وإعداد التوصيلات</p>
+</header>
+
+<main>
+<section class="card">
+<h2>ملخص الحسابات</h2>
+<div class="stats">
+<div class="stat">
+<span>عدد الأداءات</span>
+<strong id="count">0</strong>
+</div>
+<div class="stat">
+<span>المجموع (درهم)</span>
+<strong id="total">0.00</strong>
+</div>
+</div>
+</section>
+
+<section class="card">
+<h2>تسجيل أداء جديد</h2>
+<form id="paymentForm">
+<label for="customer">اسم الزبون</label>
+<input id="customer" required maxlength="100" placeholder="الاسم الكامل">
+
+<label for="phone">رقم الهاتف (اختياري)</label>
+<input id="phone" type="tel" placeholder="مثال: 0612345678">
+
+<label for="amount">المبلغ بالدرهم</label>
+<input id="amount" type="number" min="0.01" step="0.01" required placeholder="0.00">
+
+<label for="date">تاريخ الأداء</label>
+<input id="date" type="date" required>
+
+<label for="note">ملاحظة (اختياري)</label>
+<textarea id="note" rows="2" maxlength="300" placeholder="سبب الأداء أو تفاصيل إضافية"></textarea>
+
+<button class="primary" type="submit">حفظ الأداء</button>
+</form>
+<p class="muted">البيانات كتتحفظ فالمتصفح ديال هاد التليفون.</p>
+</section>
+
+<section class="card">
+<h2>سجل الأداءات</h2>
+<input id="search" placeholder="قلب باسم الزبون..." aria-label="البحث عن زبون">
+<div id="records"></div>
+<div class="actions">
+<button class="secondary" id="exportBtn" type="button">تصدير نسخة احتياطية</button>
+<button class="delete" id="clearBtn" type="button">مسح جميع البيانات</button>
+</div>
+<p class="muted">احتافظ بنسخة احتياطية بانتظام. مسح بيانات المتصفح أو تغيير التليفون قد يؤدي إلى فقدان البيانات.</p>
+</section>
+</main>
+
+<footer>نسخة أولية — تسيير الأداءات</footer>
+
+<script>
+const $ = id => document.getElementById(id);
+const STORAGE_KEY = 'gestion_paiements_v1';
+let payments = [];
+
+try {
+  const saved = localStorage.getItem(STORAGE_KEY);
+  payments = saved ? JSON.parse(saved) : [];
+  if (!Array.isArray(payments)) payments = [];
+} catch (e) {
+  payments = [];
+}
+
+function save() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(payments));
+    return true;
+  } catch (e) {
+    alert('تعذر حفظ البيانات. صدّر نسخة احتياطية وتحقق من مساحة التخزين.');
+    return false;
+  }
+}
+
+function money(n) {
+  return Number(n).toLocaleString('fr-MA', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+}
+
+function safeText(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&':'&amp;', '<':'&lt;', '>':'&gt;',
+    '"':'&quot;', "'":'&#39;'
+  })[ch]);
+}
+
+function render() {
+  $('count').textContent = payments.length;
+  $('total').textContent = money(
+    payments.reduce((sum, p) => sum + Number(p.amount || 0), 0)
+  );
+
+  const q = $('search').value.trim().toLowerCase();
+  const list = payments.filter(p =>
+    String(p.customer).toLowerCase().includes(q)
+  );
+  const container = $('records');
+
+  if (!list.length) {
+    container.innerHTML = '<div id="empty">ما كاين حتى أداء مسجل.</div>';
+    return;
+  }
+
+  container.innerHTML = list.slice().reverse().map(p => `
+    <article class="entry">
+      <h3>${safeText(p.customer)}</h3>
+      <p><strong>المبلغ:</strong> ${money(p.amount)} درهم</p>
+      <p><strong>التاريخ:</strong> ${safeText(p.date)}</p>
+      ${p.phone ? `<p><strong>الهاتف:</strong> ${safeText(p.phone)}</p>` : ''}
+      ${p.note ? `<p><strong>ملاحظة:</strong> ${safeText(p.note)}</p>` : ''}
+      <div class="actions">
+        <button class="whatsapp" data-share="${safeText(p.id)}">إرسال التوصيل</button>
+        <button class="delete" data-delete="${safeText(p.id)}">حذف</button>
+      </div>
+    </article>
+  `).join('');
+}
+
+$('date').value = new Date().toLocaleDateString('en-CA');
+
+$('paymentForm').addEventListener('submit', e => {
+  e.preventDefault();
+
+  const payment = {
+    id: String(Date.now()) + Math.random().toString(36).slice(2, 7),
+    customer: $('customer').value.trim(),
+    phone: $('phone').value.trim(),
+    amount: Number($('amount').value),
+    date: $('date').value,
+    note: $('note').value.trim()
+  };
+
+  if (!payment.customer || !payment.date ||
+      !Number.isFinite(payment.amount) || payment.amount <= 0) {
+    alert('تأكد من الاسم والمبلغ والتاريخ.');
+    return;
+  }
+
+  payments.push(payment);
+  if (!save()) {
+    payments.pop();
+    return;
+  }
+
+  e.target.reset();
+  $('date').value = new Date().toLocaleDateString('en-CA');
+  render();
+  alert('تم حفظ الأداء بنجاح.');
+});
+
+$('search').addEventListener('input', render);
+
+$('records').addEventListener('click', e => {
+  const shareId = e.target.dataset.share;
+  const deleteId = e.target.dataset.delete;
+
+  if (shareId) {
+    const p = payments.find(item => item.id === shareId);
+    if (!p) return;
+
+    const receipt =
+`وصل أداء
+الاسم: ${p.customer}
+المبلغ: ${money(p.amount)} درهم
+التاريخ: ${p.date}
+${p.note ? 'ملاحظة: ' + p.note + '\n' : ''}
+شكرا لكم.`;
+
+    const phone = p.phone.replace(/\D/g, '');
+    const url = phone
+      ? 'https://wa.me/' +
+        (phone.startsWith('0') ? '212' + phone.slice(1) : phone) +
+        '?text=' + encodeURIComponent(receipt)
+      : 'https://wa.me/?text=' + encodeURIComponent(receipt);
+
+    window.open(url, '_blank');
+  }
+
+  if (deleteId) {
+    if (!confirm('واش متأكد بغيتي تحذف هاد الأداء؟')) return;
+    const old = payments;
+    payments = payments.filter(p => p.id !== deleteId);
+    if (!save()) payments = old;
+    render();
+  }
+});
+
+$('exportBtn').addEventListener('click', () => {
+  const blob = new Blob(
+    [JSON.stringify(payments, null, 2)],
+    {type: 'application/json;charset=utf-8'}
+  );
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'paiements-backup.json';
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+$('clearBtn').addEventListener('click', () => {
+  if (!payments.length) {
+    alert('ما كايناش بيانات للمسح.');
+    return;
+  }
+  if (!confirm('تنبيه: غادي يتم مسح جميع الأداءات نهائياً. واش متأكد؟')) return;
+  const old = payments;
+  payments = [];
+  if (!save()) payments = old;
+  render();
+});
+
+render();
+</script>
+</body>
+</html>
